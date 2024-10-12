@@ -106,6 +106,7 @@ func MonitorKeyboard(screenFiles chan string, stopChan chan struct{}) {
 				if e.State == gowinkey.KeyUp {
 					fmt.Println("stop monitor keyboard&mouse")
 					close(stopChan)
+					return
 				}
 			case gowinkey.VK_F2:
 				if e.State == gowinkey.KeyUp {
