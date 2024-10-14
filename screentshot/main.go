@@ -15,42 +15,46 @@ import (
 	"time"
 )
 
-var serverIp = "127.0.0.1:8080"
+var serverIP = "127.0.0.1:8080"
 
-var uploadUrl = "/api/v1/upload"
-var endpoint = serverIp + uploadUrl
+var uploadURL = "/api/v1/upload"
+var endpoint = serverIP + uploadURL
 
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: ./xxx.exe ip:port")
-		fmt.Println("Example: ./xxx.exe 127.0.0.1:8080")
+		fmt.Println("Example: ./xxx.exe 127.0.0.1:8080(default)")
+		fmt.Println()
 	} else {
-		serverIp = os.Args[1]
+		serverIP = os.Args[1]
 	}
-	endpoint = fmt.Sprintf("http://%s%s", serverIp, uploadUrl)
+	endpoint = fmt.Sprintf("http://%s%s", serverIP, uploadURL)
 	screenFileChan := make(chan string, 10)
 	stopChan := make(chan struct{})
 
 	// monitor keyboard for event F12 and ESC
 	// capture full screen and send it to screenFileChan when F2 is pressed
 	// exit when receive ESC or os.Interrupt signal
-	// ESC: ESC pressed -> stop monitor keyboard, close screenFileChan, close stopChan
-	// os.Interrupt or os.Kill: close stopChan by main, then this goroutine will exit too.
+	// 		1. ESC: ESC pressed -> stop monitor keyboard, close screenFileChan, close stopChan
+	// 		2. os.Interrupt or os.Kill -> close stopChan by main, then monitor goroutine will close screenFileChan
+	//			and exit.
 	go MonitorKeyboard(screenFileChan, stopChan)
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 
 	// upload screenshot file to server, only exit when screenFileChan is closed.
-	// the screenshot goroutine will close screenFileChan when ESC is pressed or receive
+	// the monitor goroutine will close screenFileChan when ESC is pressed or receive
 	// os.Interrupt signal or os.Kill signal.
 	uploadDone := make(chan struct{})
 	go func() {
+		// block here until screenFileChan closed
 		for file := range screenFileChan {
 			UploadFile(endpoint, file)
 		}
+		// notify main goroutine to exit
 		uploadDone <- struct{}{}
 	}()
 
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 	select {
 	case <-signalChan:
 		// receive os.Interrupt or os.Kill signal -> close stopChan -> MonitorKeyboard close screenFileChan and exit
@@ -85,6 +89,7 @@ func MonitorKeyboard(screenFiles chan string, stopChan chan struct{}) {
 	//	case <-stopChan:
 	//		// ...
 	//	default:
+	//		// would block here.
 	//		for e := range events {
 	//			// ...
 	//		}
@@ -93,7 +98,7 @@ func MonitorKeyboard(screenFiles chan string, stopChan chan struct{}) {
 	for {
 		select {
 		case <-stopChan:
-			// no longer send file to screenFiles, so close it to stop the upload goroutine.
+			// no longer send file to screenFiles, so close it in defer stack to notify the upload goroutine exit.
 			fmt.Println("stop monitor keyboard&mouse")
 			return
 		case e, ok := <-events:
@@ -199,7 +204,7 @@ func UploadFile(endpoint, filePath string) {
 		return
 	}
 
-	fmt.Printf("File: %s uploaded to %s successfully.\n", filePath, endpoint)
+	fmt.Printf("File %s uploaded to %s successfully\n", filePath, endpoint)
 }
 
 func GetFileNameByTime() string {

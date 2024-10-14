@@ -9,34 +9,41 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path"
 	"path/filepath"
 	"syscall"
 	"time"
 )
 
-var port = 8080
+var port = "8080"
 
 func main() {
+	if len(os.Args) != 2 {
+		fmt.Println("Usage: ./xxx.exe port")
+		fmt.Println("Example: ./xxx.exe 8080(default to use)")
+		fmt.Println()
+	} else {
+		port = os.Args[1]
+	}
 	server := StartServer(port)
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	<-quit
 	GracefulShutdown(server)
-	time.Sleep(2 * time.Second)
+	time.Sleep(1 * time.Second)
 }
 
 // StartServer 启动服务器
-func StartServer(port int) *http.Server {
+func StartServer(port string) *http.Server {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
-	router.POST("/api/v1/upload", FilesController)
+	router.GET("/ping", PongHandler)
+	router.POST("/api/v1/upload", FileHandler)
 	router.NoRoute(func(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 	})
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
+		Addr:    fmt.Sprintf(":%s", port),
 		Handler: router,
 	}
 
@@ -45,8 +52,8 @@ func StartServer(port int) *http.Server {
 			log.Fatalf("Failed to start server: %v", err)
 		}
 	}()
-
-	fmt.Printf("Server started on port %d\n", port)
+	fmt.Printf("Server started on port %s\n", port)
+	PrintRoutes(router)
 	return server
 }
 
@@ -59,10 +66,16 @@ func GracefulShutdown(server *http.Server) {
 		log.Fatalf("Failed to gracefully shutdown server: %v", err)
 	}
 
-	fmt.Println("Server gracefully shut down")
+	fmt.Println("Server gracefully shut down ...")
 }
 
-func FilesController(c *gin.Context) {
+// PongHandler 处理 /ping 请求
+func PongHandler(c *gin.Context) {
+	c.String(http.StatusOK, "pong")
+}
+
+// FileHandler 处理文件上传, 保存到 uploads 目录下
+func FileHandler(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
 		log.Fatal(err)
@@ -72,16 +85,22 @@ func FilesController(c *gin.Context) {
 		log.Fatal(err)
 	}
 	dir := filepath.Dir(exe)
-	//filename := fmt.Sprintf("screenshot_%d.png", time.Now().Unix())
-	uploads := filepath.Join(dir, "uploads")
-	err = os.MkdirAll(uploads, os.ModePerm)
+	uploadDir := filepath.Join(dir, "uploads")
+	err = os.MkdirAll(uploadDir, os.ModePerm)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fullPath := path.Join("uploads", file.Filename)
-	fileErr := c.SaveUploadedFile(file, filepath.Join(dir, fullPath))
+	fileErr := c.SaveUploadedFile(file, filepath.Join(uploadDir, file.Filename))
 	if fileErr != nil {
 		log.Fatal(fileErr)
 	}
-	c.JSON(http.StatusOK, gin.H{"url": "/" + fullPath})
+	c.JSON(http.StatusOK, gin.H{"url": "/uploads" + file.Filename})
+}
+
+// PrintRoutes 打印所有路由
+func PrintRoutes(r *gin.Engine) {
+	routes := r.Routes()
+	for _, route := range routes {
+		fmt.Printf("%-6s %-15s %s\n", route.Method, route.Path, route.Handler)
+	}
 }
