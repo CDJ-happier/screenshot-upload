@@ -17,7 +17,7 @@ import (
 
 var serverIP = "127.0.0.1:8080"
 
-var uploadURL = "/api/v1/upload"
+var uploadURL = "/api/v1"
 var endpoint = serverIP + uploadURL
 
 func main() {
@@ -29,6 +29,8 @@ func main() {
 		serverIP = os.Args[1]
 	}
 	endpoint = fmt.Sprintf("http://%s%s", serverIP, uploadURL)
+	PingRequest()
+
 	screenFileChan := make(chan string, 10)
 	stopChan := make(chan struct{})
 
@@ -182,7 +184,7 @@ func UploadFile(endpoint, filePath string) {
 	}
 
 	// 设置请求头
-	req, err := http.NewRequest("POST", endpoint, body)
+	req, err := http.NewRequest("POST", endpoint+"/upload", body)
 	if err != nil {
 		fmt.Println("Failed to create request:", err)
 		return
@@ -205,6 +207,23 @@ func UploadFile(endpoint, filePath string) {
 	}
 
 	fmt.Printf("File %s uploaded to %s successfully\n", filePath, endpoint)
+}
+
+func PingRequest() {
+	// send a GET request to endpoint/ping, and check whether the response is 200 OK
+	req, _ := http.NewRequest("GET", endpoint+"/ping", nil)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("Ping request failed, err: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Ping request failed: stauts code = %v", resp.StatusCode)
+		return
+	}
+	fmt.Println("Ping request success, the file server work normally")
 }
 
 func GetFileNameByTime() string {
